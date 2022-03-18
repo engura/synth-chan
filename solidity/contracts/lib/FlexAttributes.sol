@@ -40,11 +40,6 @@ contract FlexAttributes {
     BoostNumber,
     BoostPercentage
   }
-  // hold human-readable Attribute names for json output
-  string[] public displayTypes = ["", "", "number", "date", "boost_number", "boost_percentage"];
-  // an array to hold all existing `trait_type`s. (because we can't do something like dict.keys()
-  // to get the keys from a mapping...)
-  string[] public traitTypes;
 
   struct Attribute {
     DisplayType dispType;  // how to display a trait
@@ -55,35 +50,114 @@ contract FlexAttributes {
     string strValue;       // value for a string trait
   }
 
+  // an array to hold all existing `trait_type`s. (because we can't do something like dict.keys()
+  // to get the keys from a mapping...)
+  string[] internal traitTypes;
   //      ↴ specific NFT's id. ↴ string holds the trait_type (trait name)
-  mapping(uint => mapping(string => Attribute)) public attributes;
+  mapping(uint => mapping(string => Attribute)) internal attributes;
   // we want a similar functionality to @openzeppelin's EnumerableMap but simpler and with less lines of code.
   // keeps track of indexes where our traitTypes are stored; no need to loop through the array to add/remove items
-  mapping(string => uint) public traitIndex;
+  mapping(string => uint) private traitIndex;
 
-  //  traitTypes.push(""); // "reserve" the first element of the array, so we wouldn't use [0] for actual trait_types
+  // hold human-readable Attribute names for json output first 2 (None and String) have no human equivalent on UI.
+  string[] private displayTypes = ["", "", "number", "date", "boost_number", "boost_percentage"];
 
   constructor() {
     traitTypes.push(""); // "reserve" the first element of the array, so we wouldn't use [0] for actual trait_types
   }
 
-  function setTraits(string[] memory _traits) public {
+  function getAttribute(uint _nftId, string memory _trait) public view returns (Attribute memory) {
+    if(traitIndex[_trait] == 0) revert DNE();
+    return attributes[_nftId][_trait];
+  }
+
+  function setTraits(string[] memory _traits) public virtual {
     for (uint i=0; i<_traits.length; i++) {
       addTrait(_traits[i]);
     }
   }
 
-  // returns all the attributes? (this method is for debug)
-  // function getAttributes(uint _nftId) public view {
-  //   for (uint i=0; i<traitTypes.length; i++) {
-  //     Attribute memory attr = attributes[_nftId][traitTypes[i]];
-  //     console.log(traitTypes[i], 'display/editable: ', attr.display, attr.nftOwnerEditable);
-  //     console.log('numeric value/maxValue: ', uint(attr.value), uint(attr.maxValue));
-  //     console.log('strValue: ', attr.strValue, 'dispType: ', uint(attr.dispType));
-  //   }
-  // }
+  // this is for adding STRING attributes
+  // attributes[_nftId][_trait].strValue = _text;
+  // attributes[_nftId]['string attribute'] =
+  // Attribute({display: true, value: 1, maxValue: 2, strValue: 'a', dispType: DisplayType.String});
+  function setStrAttribute(
+    uint _nftId,
+    string memory _trait,
+    string memory _text,
+    bool _display
+  ) public virtual {
+    if(bytes(_text).length == 0 || traitIndex[_trait] == 0) revert DNE();
+    Attribute storage attr = attributes[_nftId][_trait];
+    attr.dispType = DisplayType.String;
+    attr.display = _display;
+    attr.strValue = _text;
+  }
 
-  function jsonAttributes(uint _nftId) public view returns (string memory json){
+  // this is for adding NUMERIC attributes
+  function setIntAttribute(
+    uint _nftId,
+    string memory _trait,
+    DisplayType _dispType,
+    uint _value,
+    bool _display
+  ) public virtual {
+    if(traitIndex[_trait] == 0) revert DNE();
+    Attribute storage attr = attributes[_nftId][_trait];
+    if(attr.maxValue > 0 && attr.maxValue < _value) revert BadValue();
+    attr.dispType = _dispType;
+    attr.display = _display;
+    attr.value = _value;
+  }
+
+  // this is for adding NUMERIC attributes with a MAXVALUE
+  function setGaugeAttribute(
+    uint _nftId,
+    string memory _trait,
+    DisplayType _dispType,
+    uint _value,
+    uint _maxvalue,
+    bool _display
+  ) public virtual {
+    if(_value > _maxvalue) revert BadValue();
+    setIntAttribute(_nftId, _trait, _dispType, _value, _display);
+    Attribute storage attr = attributes[_nftId][_trait];
+    attr.maxValue = _maxvalue;
+  }
+
+  function addTrait(string memory _trait) public virtual {
+    if(bytes(_trait).length == 0 || traitIndex[_trait] > 0) revert NotUnique(_trait);
+    traitIndex[_trait] = traitTypes.length;
+    traitTypes.push(_trait);
+  }
+
+  function rmTrait(string memory _trait) public virtual {
+    if(bytes(_trait).length == 0 || traitIndex[_trait] == 0) revert DNE();
+    // Delete does not change the array length. It resets the value at index to it's default value, (in this case 0)
+    // delete traitTypes[traitIndex[_trait]];
+    // 1. Move the last element into the place to delete
+    string memory lastElement = traitTypes[traitTypes.length - 1];
+    traitTypes[traitIndex[_trait]] = lastElement;
+    // 2. Remove the last element
+    traitTypes.pop();
+    // 3. Clean up our indeces lookup table
+    traitIndex[lastElement] = traitIndex[_trait];
+    traitIndex[_trait] = 0;
+  }
+
+  function toggleDisplay(uint _nftId, string memory _trait) public virtual {
+    if(bytes(_trait).length == 0 || traitIndex[_trait] == 0) revert DNE();
+    Attribute storage attr = attributes[_nftId][_trait];
+    attr.display = !attr.display;
+  }
+
+  function toggleOwnerEditable(uint _nftId, string memory _trait) public virtual {
+    if(bytes(_trait).length == 0 || traitIndex[_trait] == 0) revert DNE();
+    Attribute storage attr = attributes[_nftId][_trait];
+    attr.nftOwnerEditable = !attr.nftOwnerEditable;
+  }
+
+  function jsonAttributes(uint _nftId) internal view returns (string memory json){
     for (uint i=0; i<traitTypes.length; i++) {
       Attribute memory attr = attributes[_nftId][traitTypes[i]];
       if(bytes(traitTypes[i]).length == 0 || attr.dispType == DisplayType.None || !attr.display) continue;
@@ -106,94 +180,5 @@ contract FlexAttributes {
       }
     }
     return json;
-  }
-
-  function getAttribute(uint _nftId, string memory _trait) public view returns (Attribute memory) {
-    if(traitIndex[_trait] == 0) revert DNE();
-    return attributes[_nftId][_trait];
-  }
-
-  // this is for adding STRING attributes
-  // attributes[_nftId][_trait].strValue = _text;
-  // attributes[_nftId]['string attribute'] =
-  // Attribute({display: true, value: 1, maxValue: 2, strValue: 'a', dispType: DisplayType.String});
-  function setStrAttribute(
-    uint _nftId,
-    string memory _trait,
-    string memory _text,
-    bool _display
-  ) public {
-    if(bytes(_text).length == 0 || traitIndex[_trait] == 0) revert DNE();
-    Attribute storage attr = attributes[_nftId][_trait];
-    attr.dispType = DisplayType.String;
-    attr.display = _display;
-    attr.strValue = _text;
-  }
-
-  // this is for adding NUMERIC attributes
-  function setIntAttribute(
-    uint _nftId,
-    string memory _trait,
-    DisplayType _dispType,
-    uint _value,
-    bool _display
-  ) public {
-    if(traitIndex[_trait] == 0) revert DNE();
-    Attribute storage attr = attributes[_nftId][_trait];
-    if(attr.maxValue > 0 && attr.maxValue < _value) revert BadValue();
-    attr.dispType = _dispType;
-    attr.display = _display;
-    attr.value = _value;
-  }
-
-  // this is for adding NUMERIC attributes with a MAXVALUE
-  function setGaugeAttribute(
-    uint _nftId,
-    string memory _trait,
-    DisplayType _dispType,
-    uint _value,
-    uint _maxvalue,
-    bool _display
-  ) public {
-    if(_value > _maxvalue) revert BadValue();
-    setIntAttribute(_nftId, _trait, _dispType, _value, _display);
-    Attribute storage attr = attributes[_nftId][_trait];
-    attr.maxValue = _maxvalue;
-  }
-
-  function getTraits() public view returns (string[] memory) {
-    return traitTypes;
-  }
-
-  function addTrait(string memory _trait) public {
-    if(bytes(_trait).length == 0 || traitIndex[_trait] > 0) revert NotUnique(_trait);
-    traitIndex[_trait] = traitTypes.length;
-    traitTypes.push(_trait);
-  }
-
-  function rmTrait(string memory _trait) public {
-    if(bytes(_trait).length == 0 || traitIndex[_trait] == 0) revert DNE();
-    // Delete does not change the array length. It resets the value at index to it's default value, (in this case 0)
-    // delete traitTypes[traitIndex[_trait]];
-    // 1. Move the last element into the place to delete
-    string memory lastElement = traitTypes[traitTypes.length - 1];
-    traitTypes[traitIndex[_trait]] = lastElement;
-    // 2. Remove the last element
-    traitTypes.pop();
-    // 3. Clean up our indeces lookup table
-    traitIndex[lastElement] = traitIndex[_trait];
-    traitIndex[_trait] = 0;
-  }
-
-  function toggleDisplay(uint _nftId, string memory _trait) public {
-    if(bytes(_trait).length == 0 || traitIndex[_trait] == 0) revert DNE();
-    Attribute storage attr = attributes[_nftId][_trait];
-    attr.display = !attr.display;
-  }
-
-  function toggleOwnerEditable(uint _nftId, string memory _trait) public {
-    if(bytes(_trait).length == 0 || traitIndex[_trait] == 0) revert DNE();
-    Attribute storage attr = attributes[_nftId][_trait];
-    attr.nftOwnerEditable = !attr.nftOwnerEditable;
   }
 }

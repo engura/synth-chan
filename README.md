@@ -11,6 +11,15 @@ npx hardhat node
 npx hardhat help
 ```
 
+### Dependencies
+```shell
+npm install @openzeppelin/contracts web3modal ipfs-http-client dotenv @walletconnect/web3-provider
+npm install nft.storage mime
+npm install --save-dev @nomiclabs/hardhat-waffle ethereum-waffle chai @nomiclabs/hardhat-ethers ethers
+npm install --save-dev @nomiclabs/hardhat-etherscan @openzeppelin/test-helpers
+npm install -g solhint
+```
+
 ### Interactive debugging/running localhost blockchain
 ```shell
 npx hardhat node                                   # runs the server in foreground && shows test wallet accounts

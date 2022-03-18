@@ -4,6 +4,6 @@
   "rules": {
     "max-line-length": ["error", 120],
     "func-visibility": ["warn",{"ignoreConstructors":true}],
-    "compiler-version": ["error", "^0.8.10"]
+    "compiler-version": ["error", "^0.8.0"]
   }
 }
